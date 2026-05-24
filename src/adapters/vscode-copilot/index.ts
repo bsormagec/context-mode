@@ -68,7 +68,21 @@ export class VSCodeCopilotAdapter extends CopilotBaseAdapter {
   }
 
   protected getProjectDir(): string {
-    return process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    // Cascade order (locked by tests/adapters/vscode-copilot.test.ts):
+    //   1. CLAUDE_PROJECT_DIR — top priority for users running VS Code under
+    //      Claude Code CLI.
+    //   2. VSCODE_CWD — exported by VS Code's bootstrap into every child it
+    //      spawns (refs/platforms/vscode-copilot/src/util/vs/base/common/
+    //      process.ts:31). The MCP child inherits it. Was previously missing
+    //      from this cascade — every direct VS Code Copilot session silently
+    //      lost its workspace folder. PR #689 5-agent EM audit (Phase A
+    //      claim verification) confirmed the gap; this is the minimal fix.
+    //   3. process.cwd() — last resort.
+    return (
+      process.env.CLAUDE_PROJECT_DIR
+      || process.env.VSCODE_CWD
+      || process.cwd()
+    );
   }
 
   getSessionDir(): string {

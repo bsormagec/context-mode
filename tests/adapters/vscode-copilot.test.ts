@@ -82,6 +82,35 @@ describe("VSCodeCopilotAdapter", () => {
       expect(event.projectDir).toBe("/vscode/project");
     });
 
+    it("uses VSCODE_CWD for projectDir when CLAUDE_PROJECT_DIR is absent (#689 follow-up)", () => {
+      // VS Code's bootstrap (refs/platforms/vscode-copilot/src/util/vs/base/
+      // common/process.ts:31) exports VSCODE_CWD into the env of every child
+      // it spawns — the spawned MCP child inherits it. The adapter's
+      // getProjectDir() previously checked only CLAUDE_PROJECT_DIR and
+      // process.cwd(), so the workspace folder got silently lost on every
+      // VS Code Copilot session that wasn't also launched under Claude
+      // Code's CLAUDE_PROJECT_DIR. Confirmed by the v1.0.150 5-agent EM
+      // audit (Phase A claim verification).
+      delete process.env.CLAUDE_PROJECT_DIR;
+      process.env.VSCODE_CWD = "/vscode/workspace";
+      const event = adapter.parsePreToolUseInput({
+        tool_name: "readFile",
+      });
+      expect(event.projectDir).toBe("/vscode/workspace");
+    });
+
+    it("CLAUDE_PROJECT_DIR still wins over VSCODE_CWD when both are set (cascade order)", () => {
+      // Cascade order is locked: CLAUDE_PROJECT_DIR remains the top priority
+      // for users running VS Code under Claude Code's CLI; VSCODE_CWD is the
+      // second-tier fallback specific to direct VS Code Copilot sessions.
+      process.env.CLAUDE_PROJECT_DIR = "/claude/wins";
+      process.env.VSCODE_CWD = "/vscode/loses";
+      const event = adapter.parsePreToolUseInput({
+        tool_name: "readFile",
+      });
+      expect(event.projectDir).toBe("/claude/wins");
+    });
+
     it("extracts toolName from tool_name", () => {
       const event = adapter.parsePreToolUseInput({
         tool_name: "f1e_readFile",
