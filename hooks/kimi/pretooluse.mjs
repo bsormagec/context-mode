@@ -10,7 +10,7 @@ import "../suppress-stderr.mjs";
  *     → block the tool call
  *   - Exit code 2 → block (stderr used as reason)
  *
- * Unlike Codex, Kimi Code does not explictly reject ask/modify/additionalContext
+ * Unlike Codex, Kimi Code does not explicitly reject ask/modify/additionalContext
  * in its JSON output, so we emit them and let the host accept or ignore them
  * (fails-open if unsupported).
  */

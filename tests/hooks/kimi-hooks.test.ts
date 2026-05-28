@@ -1,4 +1,5 @@
 import "../setup-home";
+import { fakeHome } from "../setup-home";
 /**
  * Hook Integration Tests — Kimi Code hooks
  *
@@ -12,7 +13,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, rmSync, existsSync, unlinkSync, writeFileSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir, homedir } from "node:os";
+import { tmpdir } from "node:os";
 
 const _hashCanonical = (p: string) => createHash("sha256").update(
   (process.platform === "darwin" || process.platform === "win32") ? p.toLowerCase() : p,
@@ -57,7 +58,7 @@ describe("Kimi Code hooks", () => {
   beforeAll(() => {
     tempDir = realpathSync(mkdtempSync(join(tmpdir(), "kimi-hook-test-")));
     const hash = _hashCanonical(normalizeProjectPathForSessionHash(tempDir));
-    const sessionsDir = join(homedir(), ".kimi-code", "context-mode", "sessions");
+    const sessionsDir = join(fakeHome, ".kimi-code", "context-mode", "sessions");
     dbPath = join(sessionsDir, `${hash}.db`);
   });
 
