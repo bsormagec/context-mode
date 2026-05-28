@@ -106,6 +106,36 @@ export const formatters = {
     context: () => null, // Codex rejects additionalContext in PreToolUse (fails open)
   },
 
+  "kimi": {
+    deny: (reason) => ({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: reason,
+      },
+    }),
+    ask: () => ({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "ask",
+      },
+    }),
+    modify: (updatedInput) => ({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason: "Routed to context-mode sandbox",
+        updatedInput,
+      },
+    }),
+    context: (additionalContext) => ({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        additionalContext,
+      },
+    }),
+  },
+
   "cursor": {
     deny: (reason) => ({
       permission: "deny",

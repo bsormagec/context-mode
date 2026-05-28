@@ -5,6 +5,7 @@ let claudeCodeFormat: (decision: unknown) => unknown;
 let geminiCliFormat: (decision: unknown) => unknown;
 let vscodeCopilotFormat: (decision: unknown) => unknown;
 let cursorFormat: (decision: unknown) => unknown;
+let kimiFormat: (decision: unknown) => unknown;
 
 beforeAll(async () => {
   const ccMod = await import("../../hooks/formatters/claude-code.mjs");
@@ -18,6 +19,9 @@ beforeAll(async () => {
 
   const cursorMod = await import("../../hooks/formatters/cursor.mjs");
   cursorFormat = cursorMod.formatDecision;
+
+  const kimiMod = await import("../../hooks/formatters/kimi.mjs");
+  kimiFormat = kimiMod.formatDecision;
 });
 
 // ─── Shared test decisions ───────────────────────────────
@@ -226,6 +230,53 @@ describe("formatDecision", () => {
     it("formats context with agent_message", () => {
       const result = cursorFormat(contextDecision) as Record<string, unknown>;
       expect(result.agent_message).toBe(contextDecision.additionalContext);
+    });
+  });
+
+  // ─── Kimi formatter ────────────────────────────────────
+
+  describe("kimi formatter", () => {
+    it("formats deny with hookSpecificOutput.permissionDecision", () => {
+      const result = kimiFormat(denyDecision) as Record<string, unknown>;
+      expect(result).not.toBeNull();
+
+      const output = result.hookSpecificOutput as Record<string, unknown>;
+      expect(output.hookEventName).toBe("PreToolUse");
+      expect(output.permissionDecision).toBe("deny");
+      expect(output.permissionDecisionReason).toBe(denyDecision.reason);
+    });
+
+    it("formats ask with hookSpecificOutput.permissionDecision:'ask'", () => {
+      const result = kimiFormat(askDecision) as Record<string, unknown>;
+      expect(result).not.toBeNull();
+
+      const output = result.hookSpecificOutput as Record<string, unknown>;
+      expect(output.hookEventName).toBe("PreToolUse");
+      expect(output.permissionDecision).toBe("ask");
+    });
+
+    it("formats modify with hookSpecificOutput.updatedInput", () => {
+      const result = kimiFormat(modifyDecision) as Record<string, unknown>;
+      expect(result).not.toBeNull();
+
+      const output = result.hookSpecificOutput as Record<string, unknown>;
+      expect(output.hookEventName).toBe("PreToolUse");
+      expect(output.permissionDecision).toBe("allow");
+      expect(output.updatedInput).toEqual(modifyDecision.updatedInput);
+    });
+
+    it("formats context with hookSpecificOutput.additionalContext", () => {
+      const result = kimiFormat(contextDecision) as Record<string, unknown>;
+      expect(result).not.toBeNull();
+
+      const output = result.hookSpecificOutput as Record<string, unknown>;
+      expect(output.hookEventName).toBe("PreToolUse");
+      expect(output.additionalContext).toBe(contextDecision.additionalContext);
+    });
+
+    it("returns null for null decision", () => {
+      const result = kimiFormat(null);
+      expect(result).toBeNull();
     });
   });
 });

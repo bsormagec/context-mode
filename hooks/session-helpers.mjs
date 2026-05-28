@@ -175,6 +175,14 @@ export const KIRO_OPTS = {
   sessionIdEnv: undefined,    // No session ID env var — uses ppid fallback
 };
 
+/** Kimi Code CLI platform options. */
+export const KIMI_OPTS = {
+  configDir: ".kimi-code",
+  configDirEnv: undefined,
+  projectDirEnv: undefined,   // Kimi Code passes cwd in hook stdin, no env var
+  sessionIdEnv: undefined,    // Uses session_id from hook stdin or ppid fallback
+};
+
 /** JetBrains Copilot platform options. */
 export const JETBRAINS_OPTS = {
   configDir: ".config/JetBrains",
