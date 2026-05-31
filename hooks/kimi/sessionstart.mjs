@@ -60,44 +60,43 @@ function captureKimiInstructionRules(db, sessionId, projectDir) {
 try {
   const raw = await readStdin();
   const input = parseStdin(raw);
-  const source = input.source ?? "startup";
+  // Kimi Code emits ONLY 'startup' | 'resume' for SessionStart.source:
+  //   refs/platforms/kimi-code/.../session/index.ts:153,181,495
+  //     (triggerSessionStart signature is `source: 'startup' | 'resume'`)
+  //   refs/platforms/kimi-cli/src/kimi_cli/cli/__init__.py:642
+  //     (`_session_source = "resume" if resumed else "startup"`)
+  // Default unknown values to 'startup' rather than branching on a
+  // 'compact' path that the host never reaches.
+  const source = input.source === "resume" ? "resume" : "startup";
   const projectDir = getInputProjectDir(input, KIMI_OPTS);
 
-  if (source === "compact" || source === "resume") {
+  if (source === "resume") {
     const { SessionDB } = await loadSessionDB();
     const dbPath = getSessionDBPath(OPTS, projectDir);
     const db = new SessionDB({ dbPath });
     const sessionId = getSessionId(input, OPTS);
-    let resumeSnapshot = null;
 
-    if (source === "compact") {
-      const resume = sessionId ? db.getResume(sessionId) : null;
-      if (resume && !resume.consumed) {
-        resumeSnapshot = resume.snapshot;
-      }
-    } else {
-      try { unlinkSync(getCleanupFlagPath(OPTS, projectDir)); } catch { /* no flag */ }
-    }
+    try { unlinkSync(getCleanupFlagPath(OPTS, projectDir)); } catch { /* no flag */ }
 
     const events = sessionId ? getSessionEvents(db, sessionId) : [];
     if (events.length > 0) {
       const eventMeta = writeSessionEventsFile(events, getSessionEventsPath(OPTS, projectDir));
       additionalContext += buildSessionDirective(source, eventMeta, toolNamer);
     }
-    if (resumeSnapshot) {
-      additionalContext += `\n\n${resumeSnapshot}`;
-      db.markResumeConsumed(sessionId);
-    }
 
     db.close();
-  } else if (source === "startup") {
+  } else {
+    // source === "startup"
     const { SessionDB } = await loadSessionDB();
     const dbPath = getSessionDBPath(OPTS, projectDir);
     const db = new SessionDB({ dbPath });
     try { unlinkSync(getSessionEventsPath(OPTS, projectDir)); } catch { /* no stale file */ }
 
     db.cleanupOldSessions(7);
-    db.db.exec(`DELETE FROM session_events WHERE session_id NOT IN (SELECT session_id FROM session_meta)`);
+    // Single source of truth lives in SessionDB. Reaching through `db.db.exec`
+    // duplicated schema knowledge in the hook and would silently drift if
+    // `session_events` ever renamed its FK column.
+    db.pruneOrphanedEvents();
 
     const sessionId = getSessionId(input, OPTS);
     db.ensureSession(sessionId, projectDir);
@@ -105,7 +104,6 @@ try {
 
     db.close();
   }
-  // clear => routing block only
 } catch {
   // Swallow errors — hook must not fail
 }

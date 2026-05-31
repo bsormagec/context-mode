@@ -123,6 +123,7 @@ const HOOK_MAP: Record<string, Record<string, string>> = {
     posttooluse: "hooks/kimi/posttooluse.mjs",
     precompact: "hooks/kimi/precompact.mjs",
     sessionstart: "hooks/kimi/sessionstart.mjs",
+    sessionend: "hooks/kimi/sessionend.mjs",
     userpromptsubmit: "hooks/kimi/userpromptsubmit.mjs",
     stop: "hooks/kimi/stop.mjs",
   },

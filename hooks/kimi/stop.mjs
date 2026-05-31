@@ -3,7 +3,16 @@ import "./platform.mjs";
 import "../suppress-stderr.mjs";
 import "../ensure-deps.mjs";
 /**
- * Kimi Code CLI Stop hook — record turn/session end state for continuity.
+ * Kimi Code CLI Stop hook — record turn-end state for continuity.
+ *
+ * Stop fires at the END OF EACH ASSISTANT TURN, not at session close.
+ * Kimi Code emits a distinct `SessionEnd` event for genuine session
+ * shutdown (refs/platforms/kimi-code/.../session/index.ts:192,502 —
+ * `triggerSessionEnd('exit')`); the matching `hooks/kimi/sessionend.mjs`
+ * owns the `session_end` SessionDB row. Writing `session_end` here would
+ * have produced one such row per turn.
+ *   Cross-reference: refs/platforms/kimi-cli/src/kimi_cli/hooks/events.py:
+ *     99-114 — `session_start` and `session_end` are distinct emitters.
  */
 
 import { readStdin, parseStdin, getSessionId, getSessionDBPath, getInputProjectDir, KIMI_OPTS } from "../session-helpers.mjs";
@@ -26,13 +35,22 @@ try {
   const sessionId = getSessionId(input, OPTS);
 
   db.ensureSession(sessionId, projectDir);
-  db.insertEvent(sessionId, {
-    type: "session_end",
-    status: "completed",
+  // SessionEvent contract (src/types.ts:33-47) requires `type`, `category`,
+  // `data`, `priority`. SessionDB.insertEvent hashes `event.data` for the
+  // dedup key — passing `undefined` throws inside the wrapping try and the
+  // row silently never lands. Encode the turn snapshot into `data` so the
+  // hash is stable and the row actually persists.
+  const payload = {
     stop_hook_active: input.stop_hook_active ?? false,
     last_assistant_message: typeof input.last_assistant_message === "string"
       ? input.last_assistant_message.slice(0, 2000)
       : null,
+  };
+  db.insertEvent(sessionId, {
+    type: "turn_end",
+    category: "session",
+    data: JSON.stringify(payload),
+    priority: 1,
   }, "Stop");
 
   db.close();
