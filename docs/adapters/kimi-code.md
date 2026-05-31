@@ -18,26 +18,36 @@ Kimi Code CLI uses a JSON stdin/stdout hook paradigm similar to Claude Code and 
 
 | Feature | Status |
 |---------|--------|
-| PreToolUse | ✅ deny / ask / modify / context |
-| PostToolUse | ✅ |
-| SessionStart | ✅ |
-| PreCompact | ✅ |
-| UserPromptSubmit | ✅ (handles `ContentPart[]` array format) |
-| Stop | ✅ |
-| Modify args | ✅ (via `updatedInput`) |
-| Modify output | ✅ |
-| Inject session context | ✅ (via `additionalContext`) |
-| Block tools | ✅ (exit code 2 or `permissionDecision: "deny"`) |
+| PreToolUse | Deny only (exit code 2 or `permissionDecision: "deny"`) |
+| PostToolUse | Yes |
+| SessionStart | Yes (session continuity DB only; see note) |
+| SessionEnd | Yes (genuine session close, distinct from `Stop`) |
+| PreCompact | Yes |
+| UserPromptSubmit | Yes (handles `ContentPart[]` array format) |
+| Stop | Yes (per-turn end) |
+| Modify args | No (`updatedInput` silently dropped by host runner) |
+| Modify output | Yes |
+| Inject session context | No via `additionalContext` (host has no channel) — use `UserPromptSubmit.message` instead |
+| Block tools | Yes (exit code 2 or `permissionDecision: "deny"`) |
+
+> Capability matrix verified against upstream sources:
+> `refs/platforms/kimi-code/packages/agent-core/src/session/hooks/runner.ts:36-39,162-178`
+> and `types.ts:28-37` show that `HookSpecificOutputSchema` only parses
+> `message`, `permissionDecision`, and `permissionDecisionReason`, and that
+> `HookResult` has no `additionalContext` field. The Python runtime at
+> `refs/platforms/kimi-cli/src/kimi_cli/hooks/runner.py:62-89` behaves
+> identically. Only `permissionDecision === "deny"` triggers a block; every
+> other field is silently discarded.
 
 ## Differences from Codex CLI
 
-Kimi Code uses the same JSON stdin/stdout wire protocol as Codex, but with some important differences:
+Kimi Code uses the same JSON stdin/stdout wire protocol as Codex, with closely matching capabilities:
 
-- **`additionalContext` is accepted** in PreToolUse responses (Codex rejects it)
-- **`updatedInput` is accepted** for modifying tool arguments (Codex rejects it)
-- **`permissionDecision: "ask"` is accepted** (Codex rejects it)
+- **Deny-only PreToolUse** — `ask` / `modify` / `additionalContext` are silently dropped by Kimi's runner, same as Codex
 - **Exit code 2** blocks a tool call (same as Codex)
+- **`SessionEnd` is a distinct event** from `Stop` — `Stop` fires at end of each assistant turn; `SessionEnd` fires once when the host's session closes (`refs/platforms/kimi-code/.../session/index.ts:192,502`, `refs/platforms/kimi-cli/.../hooks/events.py:99-114`)
 - **`ContentPart[]` prompts** — Kimi sends user prompts as an array of `{ type: "text", text: "..." }` objects instead of a plain string
+- **`KIMI_CODE_HOME` is honoured** — relocating the Kimi data root also relocates context-mode's session DB (matches MoonshotAI's own first-party plugins; see `refs/platforms/kimi-code/plugins/official/kimi-datasource/bin/kimi-datasource.mjs:207-210`)
 
 ## Configuration
 
@@ -74,6 +84,11 @@ timeout = 30
 event = "Stop"
 command = "context-mode hook kimi stop"
 timeout = 30
+
+[[hooks]]
+event = "SessionEnd"
+command = "context-mode hook kimi sessionend"
+timeout = 30
 ```
 
 ## Hook Commands
@@ -83,6 +98,7 @@ timeout = 30
 | PreToolUse | `context-mode hook kimi pretooluse` |
 | PostToolUse | `context-mode hook kimi posttooluse` |
 | SessionStart | `context-mode hook kimi sessionstart` |
+| SessionEnd | `context-mode hook kimi sessionend` |
 | PreCompact | `context-mode hook kimi precompact` |
 | UserPromptSubmit | `context-mode hook kimi userpromptsubmit` |
 | Stop | `context-mode hook kimi stop` |
@@ -104,7 +120,9 @@ Add to `~/.kimi-code/mcp.json`:
 
 ## Session Storage
 
-Sessions are stored in `~/.kimi-code/context-mode/sessions/`.
+Sessions are stored in `$KIMI_CODE_HOME/context-mode/sessions/` when the env
+var is set, falling back to `~/.kimi-code/context-mode/sessions/` otherwise.
+This matches how Kimi Code resolves its own data root.
 
 ## Verify Installation
 
