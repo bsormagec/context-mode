@@ -428,7 +428,7 @@ command = "context-mode hook kimi posttooluse"
       const saved = process.env.KIMI_CODE_HOME;
       process.env.KIMI_CODE_HOME = "/custom/kimi";
       try {
-        expect(adapter.getConfigDir()).toBe("/custom/kimi");
+        expect(adapter.getConfigDir()).toBe(resolve("/custom/kimi"));
       } finally {
         if (saved === undefined) delete process.env.KIMI_CODE_HOME;
         else process.env.KIMI_CODE_HOME = saved;
@@ -445,7 +445,7 @@ command = "context-mode hook kimi posttooluse"
 
     it("session dir is under ~/.kimi-code/context-mode/sessions", () => {
       const dir = adapter.getSessionDir();
-      expect(dir).toContain(`.kimi-code${resolve("/")}context-mode${resolve("/")}sessions`);
+      expect(dir).toContain(join(".kimi-code", "context-mode", "sessions"));
     });
   });
 
