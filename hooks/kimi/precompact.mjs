@@ -23,7 +23,15 @@ import { fileURLToPath } from "node:url";
 const HOOK_DIR = dirname(fileURLToPath(import.meta.url));
 const { loadSessionDB, loadSnapshot } = createSessionLoaders(HOOK_DIR);
 const OPTS = KIMI_OPTS;
-const DEBUG_LOG = join(resolveConfigDir(OPTS), "context-mode", "precompact-debug.log");
+// Diagnostic log is opt-in via CONTEXT_MODE_DEBUG. Long-running installs hit
+// compaction repeatedly; an unbounded append-only file under the user's data
+// root accrues on every transient error. Gating the write behind an env flag
+// preserves the diagnostic for contributors who want it without burdening
+// everyone else's disk. Match the pattern used by other hooks for error
+// telemetry — most stay silent unless explicitly enabled.
+const DEBUG_LOG = process.env.CONTEXT_MODE_DEBUG
+  ? join(resolveConfigDir(OPTS), "context-mode", "precompact-debug.log")
+  : null;
 
 try {
   const raw = await readStdin();
@@ -59,11 +67,14 @@ try {
 
   db.close();
 } catch (err) {
-  try {
-    appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${err?.message || err}\n`);
-  } catch {
-    // Hook errors must not break Kimi Code compaction.
+  if (DEBUG_LOG) {
+    try {
+      appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${err?.message || err}\n`);
+    } catch {
+      // Hook errors must not break Kimi Code compaction.
+    }
   }
+  // Without CONTEXT_MODE_DEBUG, swallow silently — same shape as other hooks.
 }
 
 process.stdout.write(JSON.stringify({}) + "\n");

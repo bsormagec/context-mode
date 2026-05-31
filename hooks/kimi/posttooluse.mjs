@@ -35,13 +35,21 @@ try {
 
   db.ensureSession(sessionId, projectDir);
 
-  // Kimi Code sends tool_output on success (no tool_response field)
+  // Kimi Code sends tool_output on success (no tool_response field).
+  // Normalize tool_response to a clean string — when the host omits it,
+  // surface the empty string rather than `JSON.stringify(undefined ?? "")`
+  // which yields `'""'` and tricks downstream extractEvents into treating
+  // an empty response as a non-empty payload.
+  let toolResponse = "";
+  if (typeof input.tool_response === "string") {
+    toolResponse = input.tool_response;
+  } else if (input.tool_response !== undefined && input.tool_response !== null) {
+    toolResponse = JSON.stringify(input.tool_response);
+  }
   const normalizedInput = {
     tool_name: normalizeToolName(input.tool_name ?? ""),
     tool_input: input.tool_input ?? {},
-    tool_response: typeof input.tool_response === "string"
-      ? input.tool_response
-      : JSON.stringify(input.tool_response ?? ""),
+    tool_response: toolResponse,
     tool_output: input.tool_output
       ? {
         ...input.tool_output,
