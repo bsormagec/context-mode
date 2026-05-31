@@ -107,6 +107,19 @@ export const formatters = {
   },
 
   "kimi": {
+    // Kimi Code / Kimi CLI hook runners parse ONLY `permissionDecision === "deny"`
+    // for structured PreToolUse output. Anything else (ask / allow+updatedInput /
+    // additionalContext) is silently dropped, and the host's HookResult type has
+    // no `additionalContext` field at all.
+    //   Evidence: refs/platforms/kimi-code/packages/agent-core/src/session/hooks/
+    //     runner.ts:36-39,162-178  (HookSpecificOutputSchema + structuredOutput())
+    //   Evidence: refs/platforms/kimi-code/packages/agent-core/src/session/hooks/
+    //     types.ts:28-37            (HookResult has no additionalContext)
+    //   Evidence: refs/platforms/kimi-cli/src/kimi_cli/hooks/runner.py:62-89
+    //     (Python runtime behaves identically)
+    // This mirrors the codex precedent established at commit 607dc70 (#225),
+    // where the same upstream "deny-only" parser forced ask/modify/context to
+    // return null in the formatter rather than emit fields the host ignores.
     deny: (reason) => ({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -114,26 +127,9 @@ export const formatters = {
         permissionDecisionReason: reason,
       },
     }),
-    ask: () => ({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "ask",
-      },
-    }),
-    modify: (updatedInput) => ({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        permissionDecisionReason: "Routed to context-mode sandbox",
-        updatedInput,
-      },
-    }),
-    context: (additionalContext) => ({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        additionalContext,
-      },
-    }),
+    ask: () => null,     // Kimi runner ignores permissionDecision !== "deny"
+    modify: () => null,  // Kimi runner has no updatedInput channel
+    context: () => null, // Kimi HookResult has no additionalContext field
   },
 
   "cursor": {

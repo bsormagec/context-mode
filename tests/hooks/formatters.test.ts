@@ -5,6 +5,8 @@ let claudeCodeFormat: (decision: unknown) => unknown;
 let geminiCliFormat: (decision: unknown) => unknown;
 let vscodeCopilotFormat: (decision: unknown) => unknown;
 let cursorFormat: (decision: unknown) => unknown;
+// Kimi has no standalone formatter — same convention as codex; the only
+// source of truth is the central registry in hooks/core/formatters.mjs.
 let kimiFormat: (decision: unknown) => unknown;
 
 beforeAll(async () => {
@@ -20,8 +22,9 @@ beforeAll(async () => {
   const cursorMod = await import("../../hooks/formatters/cursor.mjs");
   cursorFormat = cursorMod.formatDecision;
 
-  const kimiMod = await import("../../hooks/formatters/kimi.mjs");
-  kimiFormat = kimiMod.formatDecision;
+  const coreMod = await import("../../hooks/core/formatters.mjs");
+  kimiFormat = (decision: unknown) =>
+    coreMod.formatDecision("kimi", decision as { action: string } | null);
 });
 
 // ─── Shared test decisions ───────────────────────────────
@@ -233,7 +236,7 @@ describe("formatDecision", () => {
     });
   });
 
-  // ─── Kimi formatter ────────────────────────────────────
+  // ─── Kimi formatter (deny-only — mirrors codex precedent #225 / 607dc70) ──
 
   describe("kimi formatter", () => {
     it("formats deny with hookSpecificOutput.permissionDecision", () => {
@@ -246,32 +249,25 @@ describe("formatDecision", () => {
       expect(output.permissionDecisionReason).toBe(denyDecision.reason);
     });
 
-    it("formats ask with hookSpecificOutput.permissionDecision:'ask'", () => {
-      const result = kimiFormat(askDecision) as Record<string, unknown>;
-      expect(result).not.toBeNull();
-
-      const output = result.hookSpecificOutput as Record<string, unknown>;
-      expect(output.hookEventName).toBe("PreToolUse");
-      expect(output.permissionDecision).toBe("ask");
+    // Kimi's hook runner parses ONLY permissionDecision === "deny".
+    // Emitting ask / allow+updatedInput / additionalContext would create
+    // capability overclaims the host silently drops — return null instead.
+    // Evidence: refs/platforms/kimi-code/packages/agent-core/src/session/
+    //   hooks/runner.ts:36-39,162-178 and types.ts:28-37
+    //   refs/platforms/kimi-cli/src/kimi_cli/hooks/runner.py:62-89
+    it("returns null for ask (Kimi runner ignores permissionDecision !== 'deny')", () => {
+      const result = kimiFormat(askDecision);
+      expect(result).toBeNull();
     });
 
-    it("formats modify with hookSpecificOutput.updatedInput", () => {
-      const result = kimiFormat(modifyDecision) as Record<string, unknown>;
-      expect(result).not.toBeNull();
-
-      const output = result.hookSpecificOutput as Record<string, unknown>;
-      expect(output.hookEventName).toBe("PreToolUse");
-      expect(output.permissionDecision).toBe("allow");
-      expect(output.updatedInput).toEqual(modifyDecision.updatedInput);
+    it("returns null for modify (Kimi runner has no updatedInput channel)", () => {
+      const result = kimiFormat(modifyDecision);
+      expect(result).toBeNull();
     });
 
-    it("formats context with hookSpecificOutput.additionalContext", () => {
-      const result = kimiFormat(contextDecision) as Record<string, unknown>;
-      expect(result).not.toBeNull();
-
-      const output = result.hookSpecificOutput as Record<string, unknown>;
-      expect(output.hookEventName).toBe("PreToolUse");
-      expect(output.additionalContext).toBe(contextDecision.additionalContext);
+    it("returns null for context (Kimi HookResult has no additionalContext field)", () => {
+      const result = kimiFormat(contextDecision);
+      expect(result).toBeNull();
     });
 
     it("returns null for null decision", () => {

@@ -10,9 +10,13 @@ import "../suppress-stderr.mjs";
  *     → block the tool call
  *   - Exit code 2 → block (stderr used as reason)
  *
- * Unlike Codex, Kimi Code does not explicitly reject ask/modify/additionalContext
- * in its JSON output, so we emit them and let the host accept or ignore them
- * (fails-open if unsupported).
+ * Like Codex, Kimi Code only acts on `permissionDecision === "deny"` —
+ * `ask` / `allow + updatedInput` / `additionalContext` are explicitly stripped
+ * by the host's runner (refs/platforms/kimi-code/.../session/hooks/runner.ts:
+ * 36-39,162-178) and its HookResult type has no additionalContext field
+ * (types.ts:28-37). The central formatter at hooks/core/formatters.mjs
+ * therefore returns null for those branches; see the codex precedent at #225
+ * (commit 607dc70).
  */
 
 import { dirname, resolve } from "node:path";

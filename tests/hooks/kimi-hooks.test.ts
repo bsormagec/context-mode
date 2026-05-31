@@ -85,7 +85,13 @@ describe("Kimi Code hooks", () => {
       expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
     });
 
-    test("returns allow+modify JSON for curl commands (redirected to sandbox)", () => {
+    // Kimi's hook runner ignores `permissionDecision !== "deny"` and has no
+    // `updatedInput` channel (refs/platforms/kimi-code/.../session/hooks/
+    // runner.ts:36-39,162-178; types.ts:28-37). The central formatter therefore
+    // returns null for modify decisions; the hook falls back to the default
+    // passthrough JSON. Asserting `permissionDecision: "allow"` would re-encode
+    // a capability overclaim the host silently drops.
+    test("passthrough for curl commands — Kimi has no updatedInput channel", () => {
       const result = runHook("pretooluse.mjs", {
         hook_event_name: "PreToolUse",
         cwd: tempDir,
@@ -95,11 +101,13 @@ describe("Kimi Code hooks", () => {
 
       expect(result.exitCode).toBe(0);
       const parsed = JSON.parse(result.stdout);
-      expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
-      expect(parsed.hookSpecificOutput.updatedInput?.command).toContain("ctx_execute");
+      expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+      // No permissionDecision field — host treats absence as "allow as-is".
+      expect(parsed.hookSpecificOutput.permissionDecision).toBeUndefined();
+      expect(parsed.hookSpecificOutput.updatedInput).toBeUndefined();
     });
 
-    test("returns allow+modify JSON for wget commands (redirected to sandbox)", () => {
+    test("passthrough for wget commands — Kimi has no updatedInput channel", () => {
       const result = runHook("pretooluse.mjs", {
         hook_event_name: "PreToolUse",
         cwd: tempDir,
@@ -109,8 +117,9 @@ describe("Kimi Code hooks", () => {
 
       expect(result.exitCode).toBe(0);
       const parsed = JSON.parse(result.stdout);
-      expect(parsed.hookSpecificOutput.permissionDecision).toBe("allow");
-      expect(parsed.hookSpecificOutput.updatedInput?.command).toContain("ctx_execute");
+      expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+      expect(parsed.hookSpecificOutput.permissionDecision).toBeUndefined();
+      expect(parsed.hookSpecificOutput.updatedInput).toBeUndefined();
     });
 
     test("returns deny JSON for WebFetch", () => {
@@ -280,7 +289,7 @@ describe("Kimi Code hooks", () => {
   });
 
   describe("stop.mjs", () => {
-    test("exits 0 and writes session_end event", () => {
+    test("exits 0 and writes turn_end (NOT session_end) row — Stop is per-turn, not session-close", async () => {
       const result = runHook("stop.mjs", {
         hook_event_name: "Stop",
         cwd: tempDir,
@@ -288,10 +297,70 @@ describe("Kimi Code hooks", () => {
       }, tempDir);
 
       expect(result.exitCode).toBe(0);
+
+      // Stop must record `turn_end`, never `session_end`. The latter is owned
+      // by sessionend.mjs (refs/platforms/kimi-code/.../session/index.ts:
+      // 192,502 — triggerSessionEnd('exit') is a DISTINCT event from Stop).
+      expect(existsSync(dbPath)).toBe(true);
+      const Database = (await import("better-sqlite3")).default;
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const rows = db.prepare(
+          `SELECT type FROM session_events WHERE type IN ('turn_end', 'session_end')`,
+        ).all() as Array<{ type: string }>;
+        expect(rows.some(r => r.type === "turn_end"),
+          `Stop must record turn_end; rows=${JSON.stringify(rows)}`).toBe(true);
+        expect(rows.some(r => r.type === "session_end"),
+          `Stop must NOT record session_end (that's SessionEnd's job); rows=${JSON.stringify(rows)}`).toBe(false);
+      } finally {
+        db.close();
+      }
     });
 
     test("handles malformed input without crashing", () => {
       const result = runHook("stop.mjs", {});
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe("sessionend.mjs", () => {
+    // Verifies the genuine SessionEnd event (refs/platforms/kimi-code/.../
+    // session/index.ts:192,502 — triggerSessionEnd('exit')) writes the
+    // session_end SessionDB row that Stop used to mis-emit per turn.
+    test("writes session_end row with reason", async () => {
+      const result = runHook("sessionend.mjs", {
+        hook_event_name: "SessionEnd",
+        cwd: tempDir,
+        reason: "exit",
+      }, tempDir);
+
+      expect(result.exitCode).toBe(0);
+
+      expect(existsSync(dbPath)).toBe(true);
+      const Database = (await import("better-sqlite3")).default;
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const rows = db.prepare(
+          `SELECT type, data FROM session_events WHERE type = 'session_end' ORDER BY id DESC LIMIT 1`,
+        ).all() as Array<{ type: string; data: string }>;
+        expect(rows.length, `expected session_end row; got ${rows.length}`).toBeGreaterThan(0);
+        // SessionDB serializes the event payload object into `data`.
+        expect(rows[0]?.data).toContain("exit");
+      } finally {
+        db.close();
+      }
+    });
+
+    test("defaults missing reason to 'exit'", () => {
+      const result = runHook("sessionend.mjs", {
+        hook_event_name: "SessionEnd",
+        cwd: tempDir,
+      }, tempDir);
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("handles malformed input without crashing", () => {
+      const result = runHook("sessionend.mjs", {});
       expect(result.exitCode).toBe(0);
     });
   });
