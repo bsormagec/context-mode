@@ -1255,18 +1255,26 @@ async function upgrade(opts?: { platform?: string }) {
       // The post-bump cache-sweep below removes any pre-existing copies so
       // the previous-version-carry vector cannot replay.
 
-      // Normalize hooks.json + plugin.json against the REAL pluginRoot now that
-      // files have been copied. Two reasons:
-      //   1. If a prior buggy postinstall (or any future regression) baked the
-      //      tmpdir path into hooks.json, this rewrites it to pluginRoot before
-      //      the next hook fires.
-      //   2. Closes the same gap #414 closed for fresh installs — the first
-      //      hook fire after upgrade now works without waiting for MCP boot.
+      // Issue #711 + #414 split: normalize hooks.json (only) here.
+      //
+      //   - plugin.json must NOT be normalized during /ctx-upgrade — Claude
+      //     Code carries it forward into new versioned cache dirs on
+      //     auto-update, so baked absolute paths go stale (#711).
+      //   - hooks/hooks.json MUST be normalized during /ctx-upgrade on
+      //     Windows + Git Bash — Claude Code fires SessionStart / PreToolUse
+      //     BEFORE the MCP server boots, so the unresolved
+      //     `${CLAUDE_PLUGIN_ROOT}` placeholder yields MODULE_NOT_FOUND for
+      //     the first hook fire after upgrade (#414, originally wired in
+      //     13d1342 / #528).
+      //
+      // The narrow `normalizeHooksJsonOnly` helper preserves both invariants.
+      // start.mjs continues to call the full `normalizeHooksOnStartup` at the
+      // next MCP boot to re-heal plugin.json against the live __dirname.
       try {
-        const mod: { normalizeHooksOnStartup: (opts: { pluginRoot: string; nodePath: string; platform: string }) => void } =
+        const mod: { normalizeHooksJsonOnly: (opts: { pluginRoot: string; nodePath: string; platform: string }) => void } =
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (await import("../hooks/normalize-hooks.mjs" as any)) as any;
-        mod.normalizeHooksOnStartup({
+        mod.normalizeHooksJsonOnly({
           pluginRoot,
           nodePath: process.execPath,
           platform: process.platform,
